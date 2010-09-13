@@ -1,0 +1,182 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+# Copyright (c) 2010 Alejandro R. Sedeño <asedeno@mit.edu>
+
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation files
+# (the "Software"), to deal in the Software without restriction,
+# including without limitation the rights to use, copy, modify, merge,
+# publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+# ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+from __future__ import with_statement
+import sys
+import struct
+import StringIO
+
+# All specified sources are from Google's Android SDK.
+# For more information, see:
+#  http://developer.android.com/sdk/index.html
+
+# kcm.bin file format
+# Source:
+#  build/tools/kcm/kcm.cpp
+
+# ***** HEADER *****
+# Offset    | Description
+# 0x00-0x07 | The ascii value "keychar" including the null character
+# 0x08-0x0b | Endian marker (0x12345678)
+# 0x0c-0x0f | version (2)
+# 0x10-0x13 | key count (n)
+# 0x14-0x17 | keyboard type (NUMERIC [1], Q14 [2], QWERTY [3], etc.)
+# 0x18-0x1f | Padding
+# 0x20-.... | entries (16 bytes × key count)
+
+# ***** ENTRIES *****
+# Offset    | Description
+# 0x00-0x03 | KeyEvent name
+# 0x04-0x05 | Display Label
+# 0x06-0x07 | Number
+# 0x08-0x09 | Base
+# 0x0a-0x0b | Shift
+# 0x0c-0x0d | Alt
+# 0x0e-0x0f | Shift+Alt
+
+# Keycode Labels
+# source:
+#  frameworks/base/include/ui/KeycodeLabels.h
+keycodes={"SOFT_LEFT": 1, "SOFT_RIGHT": 2, "HOME": 3, "BACK": 4,
+          "CALL": 5, "ENDCALL": 6, "0": 7, "1": 8, "2": 9, "3": 10,
+          "4": 11, "5": 12, "6": 13, "7": 14, "8": 15, "9": 16,
+          "STAR": 17, "POUND": 18, "DPAD_UP": 19, "DPAD_DOWN": 20,
+          "DPAD_LEFT": 21, "DPAD_RIGHT": 22, "DPAD_CENTER": 23,
+          "VOLUME_UP": 24, "VOLUME_DOWN": 25, "POWER": 26,
+          "CAMERA": 27, "CLEAR": 28, "A": 29, "B": 30, "C": 31,
+          "D": 32, "E": 33, "F": 34, "G": 35, "H": 36, "I": 37,
+          "J": 38, "K": 39, "L": 40, "M": 41, "N": 42, "O": 43,
+          "P": 44, "Q": 45, "R": 46, "S": 47, "T": 48, "U": 49,
+          "V": 50, "W": 51, "X": 52, "Y": 53, "Z": 54, "COMMA": 55,
+          "PERIOD": 56, "ALT_LEFT": 57, "ALT_RIGHT": 58,
+          "SHIFT_LEFT": 59, "SHIFT_RIGHT": 60, "TAB": 61, "SPACE": 62,
+          "SYM": 63, "EXPLORER": 64, "ENVELOPE": 65, "ENTER": 66,
+          "DEL": 67, "GRAVE": 68, "MINUS": 69, "EQUALS": 70,
+          "LEFT_BRACKET": 71, "RIGHT_BRACKET": 72, "BACKSLASH": 73,
+          "SEMICOLON": 74, "APOSTROPHE": 75, "SLASH": 76, "AT": 77,
+          "NUM": 78, "HEADSETHOOK": 79, "FOCUS": 80, "PLUS": 81,
+          "MENU": 82, "NOTIFICATION": 83, "SEARCH": 84,
+          "MEDIA_PLAY_PAUSE": 85, "MEDIA_STOP": 86, "MEDIA_NEXT": 87,
+          "MEDIA_PREVIOUS": 88, "MEDIA_REWIND": 89,
+          "MEDIA_FAST_FORWARD": 90, "MUTE": 91, "PAGE_UP": 92,
+          "PAGE_DOWN": 93, "PICTSYMBOLS": 94, "SWITCH_CHARSET": 95, }
+
+rkeycodes={}
+for (k,v) in keycodes.items(): rkeycodes[v] = k
+
+keyboardTypes = {1: 'NUMERIC', 2: 'Q14', 3: 'QWERTY',}
+def getKBType(n):
+    if n in keyboardTypes:
+        return keyboardTypes[n]
+    raise ValueError
+
+MAGIC = 'keychar\x00'
+
+def checkHeader(buf):
+    """
+    Takes the first 32 bytes of the file, confirms it is a valid keymap header
+    Returns endian marker for struct, entry count, and keyboard type.
+    """
+    (magic, marker) = struct.unpack('8s4s20x', buf)
+    if magic != MAGIC:
+        raise ValueError
+    endian = None
+    if marker == '\x12\x34\x56\x78': # big
+        endian = '>'
+    elif marker == '\x78\x56\x34\x12': # little
+        endian = '<'
+    else:
+        raise ValueError
+
+    (version, count, kbtype) = struct.unpack(endian+'12x3i8x', buf)
+    if version != 2:
+        raise ValueError
+    kbtype = getKBType(kbtype)
+    return (endian, count, kbtype)
+
+class KR:
+    def __init__(self, values):
+        self.values = values
+        (self.keycode,
+         self.display,
+         self.number,
+         self.base,
+         self.shift,
+         self.alt,
+         self.shiftalt) = values
+
+    def __repr__(self):
+        return "KR: KeyCode %i; Base: %i" % (self.keycode, self.base)
+
+    def _fmt(self, val):
+        if 0x20 < val <= 0x7e:
+            return "'%s'" % chr(val)
+        else:
+            return '0x%X' % val
+
+    def printKR(self):
+        fmt = (rkeycodes[self.keycode],)
+        fmt += tuple([self._fmt(x) for x in self.values[1:]])
+        return ("%-15s%-10s%-10s%-10s%-10s%-10s%-10s" % fmt).strip()
+
+def parseKR(buf, endian):
+    """
+    Parses a 16-byte key row entry
+    """
+    return KR(struct.unpack(endian+'I6H', buf))
+
+def decompileKCM(In, Out):
+    header = In.read(32)
+    endian, count, ktype = checkHeader(header)
+    Out.write("[type=%s]\n" % ktype)
+    #------0         1         2         3         4         5         6         7
+    #------01234567890123456789012345678901234567890123456789012345678901234567890123
+    Out.write("# keycode      Display   Number    Base      Shift     Alt       Shift+Alt\n")
+    for i in range(count):
+        kr = parseKR(In.read(16), endian)
+        Out.write(kr.printKR()+"\n")
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print """usage: kcm [INPUT] [OUTPUT]
+
+        INPUT   compiled keycharmap file, - for STDIN
+        OUTPUT  keycharmap file, - for STDOUT
+        """
+        exit(-1)
+    In, Out = sys.argv[1:3]
+
+    output = StringIO.StringIO()
+    if In == '-':
+        decompileKCM(sys.stdin, output)
+    else:
+        with open(sys.argv[1],'rb') as f:
+            decompileKCM(f, output)
+
+    if Out == '-':
+        sys.stdout.write(output.getvalue())
+    else:
+        with open(sys.argv[2],'w') as f:
+            f.write(output.getvalue())
