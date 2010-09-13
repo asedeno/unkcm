@@ -1,0 +1,3 @@
+unkcm: like kcm, but in reverse
+
+This script takes a .kcm.bin file and generates a .kcm file.
