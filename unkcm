@@ -151,8 +151,8 @@ def decompileKCM(In, Out):
     header = In.read(32)
     endian, count, ktype = checkHeader(header)
     Out.write("[type=%s]\n" % ktype)
-    #------0         1         2         3         4         5         6         7
-    #------01234567890123456789012345678901234567890123456789012345678901234567890123
+    #          0         1         2         3         4         5         6         7
+    #          01234567890123456789012345678901234567890123456789012345678901234567890123
     Out.write("# keycode      Display   Number    Base      Shift     Alt       Shift+Alt\n")
     for i in range(count):
         kr = parseKR(In.read(16), endian)
